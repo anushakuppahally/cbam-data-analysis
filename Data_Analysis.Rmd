@@ -1,0 +1,369 @@
+---
+title: "CBAM Data Analysis"
+author: "Anusha Kuppahally"
+header-includes:
+- \usepackage{fvextra}
+- \DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,commandchars=\\\{\}}
+date: "2023-03-27"
+
+output: 
+  pdf_document:
+    toc: true
+    highlight: tango
+fontsize: 11pt
+geometry: margin=1in
+
+---
+
+\newpage
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(readxl)
+library(ggplot2)
+library(maps)
+library(rworldmap)
+```
+
+# Loading Data
+
+## Statistical Capability Data
+
+```{r}
+
+SPI_index = read_delim("~/Downloads/SPI_index.csv")
+SPI_index_2019 = SPI_index[grep('2019', SPI_index$date),]
+stats_capab_data = SPI_index_2019[c(1,2,9,76,77)]
+colnames(stats_capab_data) = c("Country_Name", "Country_Code","Statistical_Capability", "Income", "Region")
+stats_capab_data$Income <- factor(stats_capab_data$Income , levels=c("Low income", "Lower middle income", "Upper middle income", "High income"))
+
+```
+
+### LDC Column
+
+```{r}
+
+ldcs = c("Angola", "Benin", "Burkina Faso", "Burundi", "Central African Republic", "Chad", "Comoros", "Congo, Dem. Rep.", "Djibouti", "Eritrea", "Ethiopia", "Gambia, The", "Guinea", "Guinea-Bissau", "Lesotho", "Liberia", "Madagascar", "Malawi", "Mali", "Mauritania", "Mozambique", "Niger", "Rwanda", "Sao Tome and Principe", "Senegal", "Sierra Leone", "Somalia", "South Sudan", "Sudan", "Togo", "Uganda", "Tanzania", "Zambia", "Afghanistan", "Bangladesh", "Bhutan", "Cambodia", "Lao PDR", "Myanmar", "Nepal", "Timor-Leste", "Yemen, Rep.", "Haiti", "Kiribati", "Solomon Islands", "Tuvalu")
+
+stats_capab_data$LDC = with(stats_capab_data, ifelse(stats_capab_data$Country_Name %in% ldcs, 1, 0))
+table(stats_capab_data$LDC)
+
+```
+
+## Export Data
+
+```{r}
+
+comtrade_aluminum = read.csv('~/Downloads/comtrade (4).csv')
+aluminum_76 = comtrade_aluminum[c(13,14,32)]
+colnames(aluminum_76) = c("Country_Name","Country_Code","Aluminum_Exports")
+
+```
+
+## Energy Data
+
+```{r}
+
+iea_data = read_excel('~/Downloads/energy statistics data.xlsx')
+
+```
+
+# Data Cleaning
+
+Standardizing country names.
+
+```{r}
+
+aluminum_76 <- mutate(aluminum_76, Country_Name=recode(Country_Name, "Bolivia (Plurinational State of)" = "Bolivia",
+     "Bosnia Herzegovina" = "Bosnia and Herzegovina",
+     "Congo" = "Congo, Rep.",
+     "Czechia" = "Czech Republic",
+     "Dominican Rep." = "Dominican Republic",
+     "China, Hong Kong SAR" = "Hong Kong SAR, China",
+     "Côte d'Ivoire" = "Cote d'Ivoire",
+     "Rep. of Korea" = "Korea, Rep.",
+     "Kyrgyzstan" = "Kyrgyz Republic",
+     "Lao People's Dem. Rep."= "Lao PDR",
+     "China, Macao SAR" = "Macao SAR, China",
+     "Slovakia" = "Slovak Republic",
+     "Viet Nam" = "Vietnam",
+     "United Rep. of Tanzania" = "Tanzania",
+     "USA" = "United States",
+     "Yemen" = "Yemen, Rep.",
+     "Bahamas" = "Bahamas, The",
+     "Central African Rep." = "Central African Republic",
+     "Dem. Rep of Congo" = "Congo, Dem. Rep.",
+     "Gambia" = "Gambia, The",
+     "Rep. of Moldova" = "Moldova",
+     "Saint Lucia" = "St. Lucia",
+     "Egypt" = "Egypt, Arab Rep.",
+     "Venezuela" = "Venezuela, RB",
+     "Syria" = "Syrian Arab Republic",
+     "Solomon Isds" = "Solomon Islands",
+     "Br. Virgin Isds" = "British Virgin Islands",
+     "Cayman Isds" = "Cayman Islands",
+     "Dem. Rep. of the Congo" = "Congo, Dem. Rep.",
+     "Faeroe Isds" = "Faroe Islands",
+     "State of Palestine" = "West Bank and Gaza",
+     "Iran" = "Iran, Islamic Rep.",
+     "Curaçao" = "Curacao",
+     "Saint Maarten" = "Sint Maarten (Dutch part)",
+     "Marshall Isds" = "Marshall Islands",
+     "Turks and Caicos Isds" = "Turks and Caicos Islands",
+     "Saint Vincent and the Grenadines" = "St. Vincent and the Grenadines"))
+
+```
+
+```{r}
+
+df_stats_exports_combined <- inner_join(aluminum_76, stats_capab_data, by="Country_Code")
+
+df_stats_exports_combined = df_stats_exports_combined[-c(4)]
+
+```
+
+```{r}
+
+iea_data <- mutate(iea_data, Country_Name_New = stringr::str_replace_all(Country_Name,"[:space:]"," "))
+
+df_stats_exports_combined <- mutate(df_stats_exports_combined, Country_Name_New = stringr::str_replace_all(Country_Name.x,"[:space:]"," "))
+
+```
+
+# Creating Final Data Set
+
+```{r}
+
+df_all <- inner_join(df_stats_exports_combined, iea_data, by="Country_Name_New")
+
+```
+
+```{r}
+
+df_filtered=df_all[-c(9, 12, 13, 14, 15)]
+colnames(df_filtered) = c("Country_Name", "Country_Code", "Trade_Value", "Statistical_Capability", "Income", "Region", "LDC", "Country_Name_New", "Population", "GDP", "Electricity_Consumption", "CO2_Emissions")
+
+```
+
+```{r}
+
+dim(df_filtered)
+
+```
+
+```{r}
+
+head(df_filtered)
+
+```
+
+```{r}
+
+table(df_filtered$LDC,df_filtered$Income)
+
+```
+
+# Calculated Columns
+
+* Aluminum exports originally were in kg of aluminum, and needed to be divided by 1000 to get metric tonne
+
+* Energy intensity is in kwh/tonne ($15474$ is the default value for Europe from the International ALuminium Institute for 2019)
+
+* The conversion factor is in $CO_2$/kwh (using the average across all countries to simulate default values)
+
+* GDP is in billion 2015 USD 
+
+* Formulas: 
+
+    + Tonne Aluminum * (kwh/tonne) *($tCO_2$/kwh) = tonne $CO_2$ total 
+
+    + Percent Cost = Default Cost/(GDP/$10^7$)
+
+
+```{r}
+
+df_filtered$Aluminum_Exports = df_filtered$Trade_Value/1.794
+
+df_filtered$Conversion_Factor = (df_filtered$CO2_Emissions * 10^6)/(df_filtered$Electricity_Consumption * 10^9)
+
+df_filtered$Default_CO2_Output = (df_filtered$Aluminum_Exports /1000) * 15474 * mean(df_filtered$Conversion_Factor) 
+
+df_filtered$Default_Cost = df_filtered$Default_CO2_Output * 86.284
+
+df_filtered$Default_Percent_Cost = (df_filtered$Default_Cost/(df_filtered$GDP*10^7))
+
+```
+
+# Visualizations
+
+## Statistical Capability Data 
+
+```{r}
+
+
+table(stats_capab_data$Region,stats_capab_data$Income)
+
+```
+
+```{r}
+
+
+table(stats_capab_data$LDC,stats_capab_data$Income)
+
+```
+
+```{r}
+
+by(stats_capab_data$Statistical_Capability, stats_capab_data$Income, summary)
+
+```
+
+```{r}
+
+boxplot(stats_capab_data$Statistical_Capability ~ stats_capab_data$Income, main = "Boxplots of Statistical Capability by Income Level", ylab="Statistical Capability", xlab="Income", cex.axis = 0.7, col = "light blue", ylim=c(0,100))
+
+```
+
+```{r}
+
+by(stats_capab_data$Statistical_Capability, stats_capab_data$LDC, summary)
+
+```
+
+```{r}
+
+boxplot(stats_capab_data$Statistical_Capability ~ stats_capab_data$LDC,  ylab="Statistical Capability", xlab="LDC",col = "light blue", ylim=c(0,100), main = "Boxplots of Statistical Capability by LDC Status")
+
+```
+
+```{r}
+legendTitle = "Statistical Capability"
+
+sdat <- joinCountryData2Map(stats_capab_data, joinCode="ISO3", nameJoinColumn="Country_Code", verbose = TRUE)
+mapParams = mapCountryData(sdat, nameColumnToPlot="Statistical_Capability", catMethod="fixedWidth", addLegend = FALSE, missingCountryCol = "white",  mapTitle="Map of Statistical Capability by Country", oceanCol = "lightblue", colourPalette = "topo")
+
+do.call(addMapLegend, c(mapParams, labelFontSize = 0.7, horizontal = TRUE, legendShrink = 0.928, legendLabels = "all",legendArgs=c(mtext(paste(""), side=3, adj=0.5, padj=0.4, cex=0.8), 
+											mtext(paste(legendTitle, sep=""), side=1, adj=0.5, padj=-0.8, cex=0.8)), digits=3))
+
+```
+
+```{r}
+
+sdat <- joinCountryData2Map(stats_capab_data, joinCode="ISO3", nameJoinColumn="Country_Code", verbose = TRUE)
+mapParams = mapCountryData(sdat, nameColumnToPlot="Income", catMethod="Categorical", addLegend = FALSE, missingCountryCol = "white",  mapTitle="Map of Income Level by Country", oceanCol = "lightblue", colourPalette = "heat")
+
+do.call( addMapLegendBoxes, c( mapParams, title = "Income Level", cex = 0.7))
+
+```
+
+## Cost Data
+
+```{r}
+
+by(df_filtered$Default_Percent_Cost, df_filtered$Income, summary)
+
+```
+
+```{r}
+barplot(by(df_filtered$Default_Percent_Cost, df_filtered$Income, mean),cex.names = 0.7, ylim = c(0,1), main = "Barplot of Mean Cost as a Percentage of GDP by Income Level", ylab = "Cost as a Percentage of GDP", xlab = "Income",col = "lightblue")
+
+```
+
+```{r}
+
+boxplot(df_filtered$Default_Percent_Cost ~ df_filtered$Income, cex.axis = 0.7, ylab = "Cost as a Percentage of GDP", xlab = "Income", main = "Boxplots of Cost as a Percentage of GDP by Income Level", col = "lightblue")
+
+```
+
+```{r}
+
+by(df_filtered$Default_Percent_Cost, df_filtered$LDC, summary)
+
+```
+
+```{r}
+
+barplot(by(df_filtered$Default_Percent_Cost, df_filtered$LDC, mean),cex.names = 0.83, ylim = c(0,1), main = "Barplot of Mean Cost as a Percentage of GDP by LDC Status", xlab = "LDC",ylab = "Cost as a Percentage of GDP", col = "lightblue")
+
+```
+
+```{r}
+
+boxplot(df_filtered$Default_Percent_Cost ~ df_filtered$LDC,  ylab = "Cost as a Percentage of GDP", xlab = "LDC", main = "Boxplots of Cost as a Percentage of GDP by LDC Status", col = "lightblue")
+
+```
+
+# Scatterplots 
+
+## Emissions vs. GDP 
+
+```{r}
+
+par(mfrow = c(1, 2))
+
+cols = c("mediumpurple2","lightblue","darkseagreen","lightpink")
+
+plot(log(CO2_Emissions) ~ log(GDP),  data=df_filtered,xlab = "GDP (billion 2015 USD)", ylab = expression("CO"[2] * " Emissions (Mt)"), col = cols[df_filtered$Income], pch=16, cex.lab = 0.8, cex.axis = 0.8, cex.main = 1)
+
+legend("bottomright", legend=levels(df_filtered$Income), fill=cols, title="Income Level", cex = 0.6)
+
+abline(lm(log(df_filtered$CO2_Emissions)~log(df_filtered$GDP)),lty="dashed",col="darkgray")
+
+
+
+
+cols = c("paleturquoise2","lightseagreen")
+
+plot(log(CO2_Emissions) ~ log(GDP),  data=df_filtered,xlab = "GDP (billion 2015 USD)", ylab = expression("CO"[2] * " Emissions (Mt)"), col = cols[as.factor(df_filtered$LDC)], pch=16, cex.lab = 0.8, cex.axis = 0.8, cex.main = 1)
+
+legend("bottomright", legend=levels(as.factor(df_filtered$LDC)), fill=cols, title="LDC Status", cex = 0.6)
+abline(lm(log(df_filtered$CO2_Emissions)~log(df_filtered$GDP)), lty="dashed", col="darkgray")
+
+
+mtext(expression(~bold("CO"[2] * " Emissions vs. GDP (log scale)")),                   
+      side = 3,
+      line = - 2,
+      outer = TRUE,
+      font=2)
+
+```
+
+## Cost vs. Statistical Capability 
+
+```{r}
+
+summary(lm(log(CO2_Emissions) ~ log(GDP), data=df_filtered))
+cor(log(df_filtered$CO2_Emissions), log(df_filtered$GDP))
+
+```
+
+```{r}
+
+par(mfrow = c(1, 2))
+
+
+cols = c("mediumpurple2","lightblue","darkseagreen","lightpink")
+
+plot(log(Default_Percent_Cost)~log(Statistical_Capability), data=df_filtered, col = cols[as.factor(df_filtered$Income)], pch=16, cex.lab = 0.8, cex.axis = 0.8, cex.main = 0.8, xlab = "Statistical Capability", ylab = "Cost as a Percentage of GDP")
+
+legend("topleft", legend=levels(df_filtered$Income), fill=cols, title="Income Level", cex = 0.6)
+
+
+
+cols = c("paleturquoise2","lightseagreen")
+
+plot(log(Default_Percent_Cost)~log(Statistical_Capability), data=df_filtered, col = cols[as.factor(df_filtered$LDC)], pch=16, cex.lab = 0.8, cex.axis = 0.8, cex.main = 1, xlab = "Statistical Capability", ylab = "Cost as a Percentage of GDP")
+
+legend("topleft", legend=levels(as.factor(df_filtered$LDC)), fill=cols, title="LDC Status", cex = 0.6)
+
+
+
+mtext("Cost as a Percentage of GDP vs. Statistical Capability (log scale)",                   
+      side = 3,
+      line = - 2,
+      outer = TRUE,
+      font=2)
+
+```
